@@ -11,7 +11,6 @@
 #include <AsyncElegantOTA.h>
 #include <ESPAsyncWebServer.h>     //Local WebServer used to serve the configuration portal
 #include <ESPAsyncWiFiManager.h>   //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
-//#include <elegantWebpage.h>
 
 #define TRIGGER_PIN 0
 #define IO_PWR 4
@@ -20,9 +19,9 @@
 uint16_t timeout = 500; // seconds to run for
 
 //input fields
-const char* PARAM_INPUT_1 = "input1";
-const char* PARAM_INPUT_2 = "input2";
-const char* PARAM_INPUT_3 = "input3";
+const char* PARAM_INPUT_1 PROGMEM = "input1";
+const char* PARAM_INPUT_2 PROGMEM = "input2";
+const char* PARAM_INPUT_3 PROGMEM = "input3";
 
 //io trigger because espasyncwebserver
 // https://stackoverflow.com/questions/63237625/esp8266-espasyncwebserver-does-not-toggle-gpio-in-callback
@@ -50,12 +49,23 @@ text-decoration: none; font-size: 30px; margin: 2px; width: 300px;}
 <form action="/get"><button class="button" type="submit" value="Submit" name="input1" onclick="submitChange()">Start/Shutdown</button></form><br>
 <form action="/get"><button class="button" type="submit" value="Submit" name="input2" onclick="submitChange()">Restart</button></form><br>
 <form action="/get"><button class="button" type="submit" value="Submit" name="input3" onclick="submitChange()">Force Shutdown</button></form><br><br><br>
-<a href="/update"><button class="button" value="Submit" name="input3" onclick="submitChange()">Update</button></a>
+<a href="/update"><button class="button" name="input4">Update</button></a>
 </body></html>)rawliteral";
 
 void notFound(AsyncWebServerRequest *request) {
   request->send(404, "text/plain", "Not found");
 }
+
+// Get chipID based on the last 6 Characters of the MAC address without the colons
+ String getChipID(){
+  String mac = WiFi.macAddress();
+  // Extract last 8 characters of the MAC address with colons
+  String chipID = mac.substring(mac.length()-8);
+  // Remove colons from the chipID
+  chipID.replace(":", "");
+  // return the chipID variable without the colons
+  return chipID;
+ }
 
 void setup() {
   Serial.begin(9600);
@@ -90,9 +100,11 @@ void setup() {
     request->send_P(200, "text/html", index_html);
   });
 
+/*
   server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", ELEGANT_HTML, ELEGANT_HTML_SIZE);
   });
+*/
 
   // Send a GET request to <ESP_IP>/get?input1=<inputMessage>
   server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
@@ -118,17 +130,6 @@ void setup() {
   server.begin();
 }
 
- // Get chipID based on the last 6 Characters of the MAC address without the colons
- String getChipID(){
-  String mac = WiFi.macAddress();
-  // Extract last 8 characters of the MAC address with colons
-  String chipID = mac.substring(mac.length()-8);
-  // Remove colons from the chipID
-  chipID.replace(":", "");
-  // return the chipID variable without the colons
-  return chipID;
- }
-
 void loop() {
   // is configuration portal requested?
   if ( digitalRead(TRIGGER_PIN) == LOW ) {
@@ -151,10 +152,11 @@ void loop() {
 
     //WITHOUT THIS THE AP DOES NOT SEEM TO WORK PROPERLY WITH SDK 1.5 , update to at least 1.5.1
     WiFi.mode(WIFI_STA);
-    
+
     wifiManager.setTryConnectDuringConfigPortal(false);
 
-    if (!wifiManager.startConfigPortal("ESP-OnDemand")) {
+    String chipID = getChipID();
+    if (!wifiManager.startConfigPortal(("ESP-" + chipID + " OnDemand").c_str())) {
       Serial.println("failed to connect and hit timeout");
       delay(3000);
       //reset and try again, or maybe put it to deep sleep
@@ -181,11 +183,11 @@ void loop() {
   }
   if (trigger_forceshutdown){
     Serial.println("Force Shutdown");
-    Serial.println("Start");
+    //Serial.println("Start");
     digitalWrite(IO_PWR, HIGH);
     delay(11000);
     digitalWrite(IO_PWR, LOW);
-    Serial.println("Stop");
+    //Serial.println("Stop");
     trigger_forceshutdown = false;
   }
 }
