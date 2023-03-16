@@ -12,11 +12,15 @@
 #include <ESPAsyncWebServer.h>     //Local WebServer used to serve the configuration portal
 #include <ESPAsyncWiFiManager.h>   //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 
+#include <ESP8266mDNS.h>
+
 #define TRIGGER_PIN 0
 #define IO_PWR 4
 #define IO_RST 14
 
 uint16_t timeout = 500; // seconds to run for
+int serialSpeed = 9600;
+String version = "1.0.2";
 
 //input fields
 const char* PARAM_INPUT_1 PROGMEM = "input1";
@@ -34,22 +38,23 @@ AsyncWebServer server(80);
 DNSServer dns;
 
 //ESP8266 Update credential
-const char *myUsername = "Update";
-const char *myPass = "Update123";
+//const char *myUsername = "Update";
+//const char *myPass = "Update123";
 
 // HTML web page to handle the input fields
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html id="html"><head>
 <title>ESP Remote</title><meta name="viewport" content="width=device-width, initial-scale=1">
-<script>function submitChange() {setTimeout(function(){document.location.reload(false);},100);}</script>
+<script>function submitChange() {setTimeout(function(){document.location.reload(false);},500);}</script>
 <style>#html {font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;} .button {background-color: #b01af0; border: none; color: white; padding: 16px 40px;
 text-decoration: none; font-size: 30px; margin: 2px; width: 300px;}
 @media (prefers-color-scheme: dark) { #html { background-color: #36393F; color: #2D2D2D;}
 </style></head><body>
 <form action="/get"><button class="button" type="submit" value="Submit" name="input1" onclick="submitChange()">Start/Shutdown</button></form><br>
 <form action="/get"><button class="button" type="submit" value="Submit" name="input2" onclick="submitChange()">Restart</button></form><br>
-<form action="/get"><button class="button" type="submit" value="Submit" name="input3" onclick="submitChange()">Force Shutdown</button></form><br><br><br>
-<a href="/update"><button class="button" name="input4">Update</button></a>
+<form action="/get"><button class="button" type="submit" value="Submit" name="input3" onclick="submitChange()">Force Shutdown</button></form><br><br><br><br>
+<a href="/update"><button class="button" name="input4">Update</button></a><br><br><br>
+<button class="button" name="version">1.1.0</button>
 </body></html>)rawliteral";
 
 void notFound(AsyncWebServerRequest *request) {
@@ -68,7 +73,7 @@ void notFound(AsyncWebServerRequest *request) {
  }
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(serialSpeed);
   WiFi.mode(WIFI_STA);
   Serial.println("\n Starting");
  // Initialize the output variables as outputs
@@ -81,8 +86,13 @@ void setup() {
   digitalWrite(IO_RST, LOW);
   String chipID = getChipID();
   
+  String ver = version;
+  
+  Serial.println("Chip ID: " + chipID);
+  Serial.println("Version: " + ver);
+
   AsyncWiFiManager wifiManager(&server,&dns);
-  wifiManager.autoConnect(chipID.c_str(), "ESP-Remote");
+  wifiManager.autoConnect(("ESP-"+chipID).c_str(), "ESP-Remote");
 
   WiFi.mode(WIFI_STA);
   if (WiFi.waitForConnectResult() != WL_CONNECTED) {
@@ -99,12 +109,6 @@ void setup() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
     request->send_P(200, "text/html", index_html);
   });
-
-/*
-  server.on("/update", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send_P(200, "text/html", ELEGANT_HTML, ELEGANT_HTML_SIZE);
-  });
-*/
 
   // Send a GET request to <ESP_IP>/get?input1=<inputMessage>
   server.on("/get", HTTP_GET, [] (AsyncWebServerRequest *request) {
@@ -125,12 +129,24 @@ void setup() {
     }
     //request->send_P(200, "text/html", index_html);
   });
+
+
   server.onNotFound(notFound);
-  AsyncElegantOTA.begin(&server, myUsername, myPass); // Start ElegantOTA
+  AsyncElegantOTA.begin(&server); // Start ElegantOTA
   server.begin();
+
+  //Initialize mDNS
+  //if (!MDNS.begin(chipID.c_str())) {
+    if (!MDNS.begin("espc")) {
+    Serial.println("Error setting up MDNS responder!");
+  }
 }
 
+
 void loop() {
+  //Update mDNS
+  MDNS.update();
+  
   // is configuration portal requested?
   if ( digitalRead(TRIGGER_PIN) == LOW ) {
 
